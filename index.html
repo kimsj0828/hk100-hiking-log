@@ -14,6 +14,7 @@ button{cursor:pointer}
 .shell{display:grid;grid-template-columns:1fr;grid-template-rows:auto auto 1fr;min-height:100vh}
 .top{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;padding:16px 16px 12px;border-bottom:1px solid var(--bd);position:relative}
 .top h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.5px}.top h1 small{font-size:12px;font-weight:500;color:var(--mut);margin-left:8px;letter-spacing:0}
+.hr{display:flex;align-items:baseline;gap:16px}.lnk{background:none;border:0;padding:0;font-size:13px;color:var(--mut);text-decoration:underline}.lnk:disabled{opacity:.5;text-decoration:none}
 .cnt{font-size:14px;color:var(--mut)}.cnt b{font-size:24px;color:var(--fg);font-weight:800}
 .prog{position:absolute;left:0;bottom:-1px;height:3px;width:100%;background:transparent}.prog i{display:block;height:100%;background:var(--ac);width:0}
 .tabs{display:flex;border-bottom:1px solid var(--bd);background:#fff}
@@ -48,7 +49,7 @@ dialog::backdrop{background:#0007}dialog label{display:block;margin:12px 0 4px;c
   #vm,#vm[hidden]{display:block!important;grid-column:2;grid-row:2/4}#map{height:100%;position:absolute;inset:0;min-height:0}
 }
 </style></head><body><div class=shell>
-<header class=top><h1>명산100<small>블랙야크 기준 · 내 기록</small></h1><div class=cnt><b id=n1>0</b> / <span id=n2>99</span></div><div class=prog><i id=fill></i></div></header>
+<header class=top><h1>명산100<small>블랙야크 기준 · 내 기록</small></h1><div class=hr><button id=auth class=lnk>로그인</button><div class=cnt><b id=n1>0</b> / <span id=n2>99</span></div></div><div class=prog><i id=fill></i></div></header>
 <nav class=tabs><button id=tm class=on>지도</button><button id=tl>목록</button><button id=tf>피드</button></nav>
 <div id=panes>
 <section id=vl hidden><div class=tools><input id=q placeholder="산 이름·지역 검색"><select id=f><option value="">전체<option value=1>완등<option value=0>미완등</select></div>
@@ -72,12 +73,51 @@ const K='bk100n',AC='#e60050';let S={};try{S=JSON.parse(localStorage[K]||'{}')}c
 const save=()=>{try{localStorage[K]=JSON.stringify(S)}catch{}};
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';');
 const done=m=>!!(S[m.n]&&S[m.n].date),today=()=>new Date().toISOString().slice(0,10),fmt=d=>d.replace(/-/g,'.');
-const upd=(m,p)=>{S[m.n]={...S[m.n],...p};save()};
+const upd=(m,p)=>{S[m.n]={...S[m.n],...p};cu?fb.fs.setDoc(fb.fs.doc(ucol('rec'),m.n),S[m.n]).catch(cloudErr):save()};
 // 게시물(사진 포함)은 IndexedDB에 저장 — 용량이 큰 사진은 localStorage에 넣을 수 없음
 const DB=new Promise((res,rej)=>{const r=indexedDB.open('bk100',1);r.onupgradeneeded=()=>r.result.createObjectStore('posts',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const tx=(mode,f)=>DB.then(db=>new Promise((res,rej)=>{const t=db.transaction('posts',mode),r=f(t.objectStore('posts'));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)}));
 let P=[];
-const loadP=()=>tx('readonly',s=>s.getAll()).then(a=>{P=(a||[]).sort((x,y)=>y.date.localeCompare(x.date)||y.id-x.id)}).catch(()=>{});
+const loadP=()=>tx('readonly',s=>s.getAll()).then(a=>{if(cu)return;P=(a||[]).sort((x,y)=>y.date.localeCompare(x.date)||y.id-x.id)}).catch(()=>{});
+
+// 클라우드 동기화 (Firebase). 로그인하면 기록·사진을 Firestore(users/<내 uid>/...)에 저장 — 보안 규칙으로 본인만 접근.
+// 로그인 전/오프라인에서는 위의 localStorage·IndexedDB(이 기기 전용)로 동작. firebaseConfig 값은 공개용 식별자.
+const FB_CFG={apiKey:"AIzaSyAxbh4afqlOmh4QBstQoeGH_G1270QpOC0",authDomain:"myeongsan100-9bf26.firebaseapp.com",projectId:"myeongsan100-9bf26",storageBucket:"myeongsan100-9bf26.firebasestorage.app",messagingSenderId:"432129005054",appId:"1:432129005054:web:0524139aeb85a781b41caf"};
+let cu=null,fb=null,unsub=[];
+const cloudErr=e=>alert('동기화에 실패했어요: '+(e&&e.code||e));
+const ucol=n=>fb.fs.collection(fb.db,'users',cu.uid,n);
+const sortP=a=>a.sort((x,y)=>y.date.localeCompare(x.date)||y.id-x.id);
+const putPost=async p=>{if(cu){P=sortP([p,...P.filter(x=>x.id!==p.id)]);await fb.fs.setDoc(fb.fs.doc(ucol('posts'),String(p.id)),p)}else{await tx('readwrite',s=>s.put(p));await loadP()}};
+const delPost=async id=>{if(cu){P=P.filter(p=>p.id!==id);await fb.fs.deleteDoc(fb.fs.doc(ucol('posts'),String(id)))}else{await tx('readwrite',s=>s.delete(id));await loadP()}};
+// 처음 로그인 시: 서버에 없는 이 기기의 기록만 올림(서버 내용은 덮어쓰거나 지우지 않음). 계정당 1회.
+async function migrate(kind,have){
+  const key='mig_'+cu.uid;let fl={};try{fl=JSON.parse(localStorage[key]||'{}')}catch{}
+  if(fl[kind])return;
+  try{
+    if(kind==='rec'){let loc={};try{loc=JSON.parse(localStorage[K]||'{}')}catch{}
+      for(const n in loc)if(!have[n]&&(loc[n].date||loc[n].memo))await fb.fs.setDoc(fb.fs.doc(ucol('rec'),n),loc[n])}
+    else{for(const p of (await tx('readonly',s=>s.getAll()))||[])if(!have.has(p.id))await fb.fs.setDoc(fb.fs.doc(ucol('posts'),String(p.id)),p)}
+    fl[kind]=1;localStorage[key]=JSON.stringify(fl)
+  }catch(e){cloudErr(e)}
+}
+function ui(){const b=$('#auth');b.disabled=!fb&&!cu;b.textContent=cu?(cu.displayName||'계정')+' · 로그아웃':fb?'로그인':'오프라인'}
+async function onUser(u){
+  unsub.forEach(f=>f());unsub=[];
+  if(!u){cu=null;try{S=JSON.parse(localStorage[K]||'{}')}catch{S={}};await loadP();refresh();ui();return}
+  cu=u;S={};P=[];refresh();ui();let r1=true,p1=true;
+  unsub.push(fb.fs.onSnapshot(ucol('rec'),s=>{const c={};s.forEach(d=>c[d.id]=d.data());S=c;if(r1&&!s.metadata.fromCache){r1=false;migrate('rec',c)}refresh()},cloudErr));
+  unsub.push(fb.fs.onSnapshot(ucol('posts'),s=>{P=sortP(s.docs.map(d=>d.data()));if(p1&&!s.metadata.fromCache){p1=false;migrate('posts',new Set(P.map(p=>p.id)))}refresh()},cloudErr));
+}
+async function initFB(){
+  try{const b='https://www.gstatic.com/firebasejs/10.12.2/',[app,au,fs]=await Promise.all([import(b+'firebase-app.js'),import(b+'firebase-auth.js'),import(b+'firebase-firestore.js')]);
+    const a=app.initializeApp(FB_CFG);let db;
+    try{db=fs.initializeFirestore(a,{localCache:fs.persistentLocalCache({tabManager:fs.persistentMultipleTabManager()})})}catch{db=fs.getFirestore(a)}
+    fb={au,fs,db,auth:au.getAuth(a)};au.onAuthStateChanged(fb.auth,onUser)}
+  catch{fb=null;ui()}
+}
+$('#auth').onclick=()=>{if(cu){if(confirm('로그아웃할까요? (서버의 기록은 그대로 남아요)'))fb.au.signOut(fb.auth)}
+  else if(fb)fb.au.signInWithPopup(fb.auth,new fb.au.GoogleAuthProvider()).catch(e=>{if(!/popup-closed|cancelled-popup/.test(e.code))alert('로그인에 실패했어요: '+e.code)});
+  else alert('잠시 후 다시 시도하세요.')};
 const lastPost=m=>P.find(p=>p.mn===m.n);
 function stat(){const n=M.filter(done).length;$('#n1').textContent=n;$('#n2').textContent=M.length;$('#fill').style.width=n*100/M.length+'%'}
 const refresh=()=>{stat();paint();renderList();renderFeed()};
@@ -129,20 +169,21 @@ function renderFeed(){
   $('#feed').innerHTML=P.length?P.map(p=>{const m=M.find(x=>x.n===p.mn);return `<article class=post data-id=${p.id}><header><b>${esc(p.mn)} <small>${m?m.h.toLocaleString()+'m':''}</small></b><small>${fmt(p.date)}</small></header><img src="${p.img}" loading=lazy>${p.cap?`<p>${esc(p.cap)}</p>`:''}<footer><button data-del=1>삭제</button></footer></article>`}).join(''):'<div class=empty>아직 올린 사진이 없어요.<br>산에 다녀오면 첫 게시물을 올려 보세요.</div>';
 }
 $('#feed').onclick=async e=>{if(!e.target.dataset.del||!confirm('이 게시물을 삭제할까요? (완등 기록은 그대로 남아요)'))return;
-  const id=+e.target.closest('.post').dataset.id;await tx('readwrite',s=>s.delete(id));await loadP();refresh()};
+  const id=+e.target.closest('.post').dataset.id;await delPost(id);refresh()};
 // 사진: 긴 변 1080px로 줄여 저장(용량 절약), 지도용 정사각 썸네일 96px 별도 생성
 const prep=file=>new Promise((res,rej)=>{const i=new Image();i.onload=()=>{
   const k=Math.min(1,1080/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.round(i.width*k);c.height=Math.round(i.height*k);c.getContext('2d').drawImage(i,0,0,c.width,c.height);
   const t=document.createElement('canvas');t.width=t.height=96;const s=Math.min(i.width,i.height);t.getContext('2d').drawImage(i,(i.width-s)/2,(i.height-s)/2,s,s,0,0,96,96);
-  res({img:c.toDataURL('image/jpeg',.82),th:t.toDataURL('image/jpeg',.8)});URL.revokeObjectURL(i.src)};i.onerror=rej;i.src=URL.createObjectURL(file)});
+  let img;for(const q of [.82,.7,.55,.4]){img=c.toDataURL('image/jpeg',q);if(img.length<700000)break}
+  res({img,th:t.toDataURL('image/jpeg',.8)});URL.revokeObjectURL(i.src)};i.onerror=rej;i.src=URL.createObjectURL(file)});
 $('#newpost').onclick=()=>{$('#pm').innerHTML='<option value="">산을 선택하세요</option>'+M.map((m,i)=>[m,i]).sort((a,b)=>a[0].n.localeCompare(b[0].n,'ko')).map(([m,i])=>`<option value=${i}>${esc(m.n)}</option>`).join('');$('#pd').value=today();$('#pp').value='';$('#pc').value='';$('#prev').hidden=true;$('#dlg').showModal()};
 $('#pp').onchange=()=>{const f=$('#pp').files[0];if(f){$('#prev').src=URL.createObjectURL(f);$('#prev').hidden=false}};
 $('#pcancel').onclick=()=>$('#dlg').close();
 $('#psave').onclick=async()=>{
   const f=$('#pp').files[0],mv=$('#pm').value;if(mv===''||!f){alert('산과 사진을 선택하세요');return}
   const m=M[+mv],date=$('#pd').value||today();$('#psave').disabled=true;
-  try{const {img,th}=await prep(f);await tx('readwrite',s=>s.put({id:Date.now(),mn:m.n,date,cap:$('#pc').value.trim(),img,th}));
-    if(!done(m))upd(m,{date});await loadP();refresh();$('#dlg').close();tab('f')}
+  try{const {img,th}=await prep(f);await putPost({id:Date.now(),mn:m.n,date,cap:$('#pc').value.trim(),img,th});
+    if(!done(m))upd(m,{date});refresh();$('#dlg').close();tab('f')}
   catch{alert('저장에 실패했어요. 사진을 다시 선택하거나 저장 공간을 확인하세요.')}
   $('#psave').disabled=false};
 // 탭. PC(넓은 화면)는 지도가 항상 오른쪽에 보이므로 '지도' 탭이 목록으로 대체됨
@@ -155,11 +196,14 @@ wide.onchange=()=>tab(cur);
 $('#tm').onclick=()=>tab('m');$('#tf').onclick=()=>tab('f');$('#tl').onclick=()=>tab('l');
 // 백업/복원: 기록 + 사진 전체를 JSON 한 파일로
 $('#exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({S,P})]));a.download='mountain-backup.json';a.click()};
-$('#imp').onclick=()=>{const i=document.createElement('input');i.type='file';i.onchange=async()=>{try{const d=JSON.parse(await i.files[0].text());S=d.S||{};save();await tx('readwrite',s=>{s.clear();(d.P||[]).forEach(p=>s.put(p))});await loadP();refresh()}catch{alert('올바른 백업 파일이 아니에요')}};i.click()};
+$('#imp').onclick=()=>{const i=document.createElement('input');i.type='file';i.onchange=async()=>{try{const d=JSON.parse(await i.files[0].text());
+  if(cu){for(const n in d.S||{})await fb.fs.setDoc(fb.fs.doc(ucol('rec'),n),d.S[n]);for(const p of d.P||[])await putPost(p)}
+  else{S=d.S||{};save();await tx('readwrite',s=>{s.clear();(d.P||[]).forEach(p=>s.put(p))});await loadP()}
+  refresh()}catch{alert('올바른 백업 파일이 아니에요')}};i.click()};
 const ks=document.createElement('script');ks.src='https://dapi.kakao.com/v2/maps/sdk.js?appkey='+KAKAO_KEY+'&libraries=clusterer&autoload=false';
 ks.onload=()=>kakao.maps.load(()=>{if(!$('#vm').hidden||wide.matches)initMap()});ks.onerror=()=>{kfail=true;initMap()};document.head.appendChild(ks);
 stat();renderList();renderFeed();tab('m');
-loadP().then(refresh);
+loadP().then(refresh);initFB();
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script></body></html>
