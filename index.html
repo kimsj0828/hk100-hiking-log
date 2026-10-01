@@ -32,11 +32,14 @@ button{cursor:pointer}
 .credit{padding:14px 16px 0;font-size:12px;color:var(--mut)}.credit a{color:inherit}.foot{display:flex;gap:8px;padding:16px}.foot button{flex:1}
 .post{border-bottom:10px solid var(--soft)}.post header{padding:12px 16px;display:flex;justify-content:space-between;align-items:baseline}.post header b{font-size:16px}.post header small{color:var(--mut)}
 .post img{width:100%;display:block;max-height:75vh;object-fit:cover}.post p{margin:0;padding:12px 16px 4px;white-space:pre-wrap}
+.post header b.go{cursor:pointer}.post header b.go:hover{text-decoration:underline}
 .post footer{padding:4px 16px 12px;text-align:right}.post footer button{border:0;background:none;color:var(--mut);padding:2px;font-size:13px}
 .hint{padding:14px 16px;font-size:13px;color:var(--mut);border-bottom:1px solid var(--bd)}.hint b{color:var(--fg)}
 .empty{color:var(--mut);text-align:center;padding:60px 16px}
 #vm{position:relative;min-height:0}#map{height:calc(100vh - 118px);min-height:420px;background:#e9edf1}
-.pt{pointer-events:none;padding:6px;display:flex}.dot{display:block;width:15px;height:15px;border-radius:50%;background:#111;border:2px solid #fff;box-shadow:0 0 2px #0009}.dot.on{background:#1f5fd1}.th{display:block;width:48px;height:48px;object-fit:cover;border:3px solid #fff;box-shadow:0 1px 5px #0007;background:#fff}
+.pt{pointer-events:none;padding:6px;display:flex;position:relative}
+.pt .lb{display:none;position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:-1px;font-size:12px;font-weight:700;color:#111;white-space:nowrap;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
+#map.lbl .pt .lb{display:block}.dot{display:block;width:15px;height:15px;border-radius:50%;background:#111;border:2px solid #fff;box-shadow:0 0 2px #0009}.dot.on{background:#1f5fd1}.th{display:block;width:48px;height:48px;object-fit:cover;border:3px solid #fff;box-shadow:0 1px 5px #0007;background:#fff}
 .locbtn{position:absolute;right:10px;bottom:10px;z-index:5;width:48px;height:48px;padding:3px;background:#fff;border:1px solid #111;display:flex;align-items:center;justify-content:center}.locbtn img{width:100%;height:100%}.locbtn.on{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac)}
 @keyframes bob{50%{transform:translateY(-5px)}}.cat{display:block;width:48px;height:48px;animation:bob 1.6s ease-in-out infinite;filter:drop-shadow(0 3px 2px #0005)}
 .leg{position:absolute;left:10px;bottom:10px;z-index:5;background:#fffe;border:1px solid var(--bd);padding:5px 9px;font-size:12px;color:#333}
@@ -69,7 +72,7 @@ dialog::backdrop{background:#0007}dialog label{display:block;margin:12px 0 4px;c
 <dialog id=dlg>
 <b id=dt>오늘의 완등 체크</b>
 <label>날짜</label><input id=pd type=date>
-<label>사진</label><input id=pp type=file accept="image/*"><img id=prev hidden>
+<label id=lp>사진</label><input id=pp type=file accept="image/*"><img id=prev hidden>
 <label>글</label><textarea id=pc rows=3 placeholder="오늘의 산행을 남겨 보세요 (사진 없이 글만 쓰면 메모로 저장돼요)"></textarea>
 <div class=dact><button id=pcancel type=button class="btn line">취소</button><button id=psave type=button class=btn>완등 체크</button></div>
 </dialog>
@@ -144,24 +147,27 @@ function initMap(){
   const mnLa=Math.min(...M.map(m=>m.a)),mxLa=Math.max(...M.map(m=>m.a));
   fit=force=>{if(touched&&!force)return;map.relayout();const r=$('#map').getBoundingClientRect(),need=Math.max(578/r.height,330/r.width)/1.025,
       L=Math.min(14,Math.max(10,Math.ceil(13+Math.log2(need)))),lonSpan=r.width*1.025*2**(L-13)/90,even=(mxLo+mnLo)/2;
-    map.setLevel(L,{animate:false});map.setCenter(new kakao.maps.LatLng((mnLa+mxLa)/2,Math.max(mxLo+.35-lonSpan/2,even-.9)))};
+    map.setLevel(L,{animate:false});lab();map.setCenter(new kakao.maps.LatLng((mnLa+mxLa)/2,Math.max(mxLo+.35-lonSpan/2,even-.9)))};
   // 화면 배치가 끝나기 전/후로 맞추고, 창 크기가 바뀌어도(사용자가 지도를 만지기 전까지) 다시 맞춤
   setTimeout(()=>fit(true),50);setTimeout(()=>fit(),900);let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>fit(),250)});
   // 산 점은 clickable:false 오버레이 → 점 위에서 드래그를 시작해도 지도가 움직임(Marker는 드래그를 가로챔)
   mk=M.map((m,i)=>{const el=document.createElement('div');el.className='pt';
     const o=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(m.a,m.o),content:el,xAnchor:.5,yAnchor:.5,zIndex:5,clickable:false});o.setMap(map);o.el=el;return o});
   ov=new kakao.maps.CustomOverlay({yAnchor:1.3,zIndex:10,clickable:true});
+  const lab=()=>$('#map').classList.toggle('lbl',map.getLevel()<=10);kakao.maps.event.addListener(map,'zoom_changed',lab);lab();
   kakao.maps.event.addListener(map,'click',e=>{const pj=map.getProjection(),c=pj.containerPointFromCoords(e.latLng);let best=-1,bd=1e9;
     M.forEach((m,k)=>{const p=pj.containerPointFromCoords(new kakao.maps.LatLng(m.a,m.o)),d=Math.hypot(p.x-c.x,p.y-c.y),rad=done(m)&&lastPost(m)?28:16;if(d<=rad&&d<bd){bd=d;best=k}});
     best>=0?openPop(best):ov.setMap(null)});
   paint();
 }
+// 지도로 이동: 폰은 지도 탭으로 전환, PC는 오른쪽 지도 그대로. 산을 가까이 확대하고 상세 카드를 엶
+function focusMap(i){if(!wide.matches)tab('m');initMap();if(!map)return;setTimeout(()=>{map.relayout();map.setLevel(Math.min(map.getLevel(),7),{animate:false});map.setCenter(new kakao.maps.LatLng(M[i].a,M[i].o));openPop(i)},150)}
 function openPop(i){if(!map)return;const m=M[i],el=document.createElement('div');el.className='kpop';el.innerHTML='<span class=x>✕</span>'+pop(m,i);
   el.querySelector('.x').onclick=()=>ov.setMap(null);
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const a=b.dataset.a;ov.setMap(null);if(a==='undo'){upd(m,{date:''});refresh()}else openCheck(i,a==='add')});
   ov.setContent(el);ov.setPosition(mk[i].getPosition());ov.setMap(map);const pj=map.getProjection(),pt=pj.containerPointFromCoords(mk[i].getPosition());map.panTo(pj.coordsFromContainerPoint(new kakao.maps.Point(pt.x,pt.y-130)))}
 const pop=(m,i)=>{const p=done(m)&&lastPost(m);return `<div class=pop><b>${esc(m.n)}</b><small>정상 | ${m.h.toLocaleString()}m<br>인증지점: ${esc(m.p)}<br>${esc(m.l)}${done(m)?'<br><span style="color:'+AC+';font-weight:700">완등 '+fmt(S[m.n].date)+'</span>':''}</small>${p?`<img src="${p.img}">`:''}${done(m)?'<button class=btn data-a=add>사진·글 올리기</button><button class="btn line" data-a=undo>완등 취소</button>':'<button class=btn data-a=check>오늘 완등 체크</button>'}</div>`};
-const paintOne=i=>{const m=M[i],p=done(m)&&lastPost(m);mk[i].el.innerHTML=p?`<img class=th src="${p.th}">`:`<i class="dot${done(m)?' on':''}"></i>`};
+const paintOne=i=>{const m=M[i],p=done(m)&&lastPost(m);mk[i].el.innerHTML=(p?`<img class=th src="${p.th}">`:`<i class="dot${done(m)?' on':''}"></i>`)+`<span class=lb>${esc(m.n)}</span>`};
 const paint=()=>mk.forEach((_,i)=>paintOne(i));
 // 목록 (BAC 공식 페이지처럼: 왼쪽 정보, 오른쪽 사진)
 let openIdx=-1;
@@ -170,11 +176,12 @@ function renderList(){
   $('#list').innerHTML=M.map((m,i)=>[m,i]).filter(([m])=>(!q||(m.n+m.l).includes(q))&&(f===''||done(m)==(f==='1'))).map(([m,i])=>{
     const s=S[m.n]||{},p=done(m)&&lastPost(m);
     return `<div class="item ${i===openIdx?'open':''}" data-i=${i}><div class=r><div class=t><div class=nm>${esc(m.n)}</div><div class=sub>정상 | ${m.h.toLocaleString()}m</div><div class=loc>${esc(m.l)}</div>${done(m)?`<div class=badge>완등 ${fmt(s.date)}</div>`:''}</div><div class=strip>${p?`<img class="ph sq" loading=lazy src="${p.img}">`:''}${m.i?`<img class="ph bac" loading=lazy referrerpolicy=no-referrer src="${m.i.startsWith('http')?m.i:BACIMG+m.i}" onerror="this.style.visibility='hidden'">`:(p?'':'<div class="ph bac"></div>')}</div></div>
-    <div class=det><div class=loc>인증지점: ${esc(m.p)}</div><div class=row><input type=date value="${s.date||''}"><button class="btn${done(m)?' line':''}" data-chk=1>${done(m)?'완등 취소':'오늘 완등 체크'}</button>${done(m)?'<button class=btn data-add=1>사진·글</button>':''}</div><textarea rows=2 placeholder="메모">${esc(s.memo||'')}</textarea></div></div>`}).join('')||'<div class=empty>검색 결과가 없어요.</div>';
+    <div class=det><div class=loc>인증지점: ${esc(m.p)}</div><div class=row><input type=date value="${s.date||''}"><button class="btn${done(m)?' line':''}" data-chk=1>${done(m)?'완등 취소':'오늘 완등 체크'}</button>${done(m)?'<button class=btn data-add=1>사진·글</button>':''}</div><button class="btn line" data-map=1>지도에서 보기</button><textarea rows=2 placeholder="메모">${esc(s.memo||'')}</textarea></div></div>`}).join('')||'<div class=empty>검색 결과가 없어요.</div>';
 }
 const mi=e=>M[+e.target.closest('.item').dataset.i];
 $('#list').onclick=e=>{const el=e.target.closest('.item');if(!el)return;
   if(e.target.dataset.chk||e.target.dataset.add){const m=mi(e),i=+el.dataset.i;if(e.target.dataset.add||!done(m))openCheck(i,!!e.target.dataset.add);else{upd(m,{date:''});refresh()}return}
+  if(e.target.dataset.map){focusMap(+el.dataset.i);return}
   if(e.target.closest('.det'))return;
   const i=+el.dataset.i;openIdx=openIdx===i?-1:i;renderList();if(openIdx>=0&&matchMedia('(min-width:900px)').matches)openPop(i)};
 $('#list').onchange=e=>{if(e.target.type==='date'){upd(mi(e),{date:e.target.value});refresh()}};
@@ -182,10 +189,12 @@ $('#list').oninput=e=>{if(e.target.tagName==='TEXTAREA')upd(mi(e),{memo:e.target
 $('#q').oninput=$('#f').onchange=renderList;
 // 피드
 function renderFeed(){
-  $('#feed').innerHTML=P.length?P.map(p=>{const m=M.find(x=>x.n===p.mn);return `<article class=post data-id=${p.id}><header><b>${esc(p.mn)} <small>${m?m.h.toLocaleString()+'m':''}</small></b><small>${fmt(p.date)}</small></header><img src="${p.img}" loading=lazy>${p.cap?`<p>${esc(p.cap)}</p>`:''}<footer><button data-del=1>삭제</button></footer></article>`}).join(''):'<div class=empty>아직 올린 사진이 없어요.<br>산을 완등 체크하면서 첫 사진을 올려 보세요.</div>';
+  $('#feed').innerHTML=P.length?P.map(p=>{const m=M.find(x=>x.n===p.mn);return `<article class=post data-id=${p.id}><header><b data-go=1 class=go>${esc(p.mn)} <small>${m?m.h.toLocaleString()+'m':''}</small></b><small>${fmt(p.date)}</small></header><img src="${p.img}" loading=lazy>${p.cap?`<p>${esc(p.cap)}</p>`:''}<footer><button data-edit=1>수정</button><button data-del=1>삭제</button></footer></article>`}).join(''):'<div class=empty>아직 올린 사진이 없어요.<br>산을 완등 체크하면서 첫 사진을 올려 보세요.</div>';
 }
-$('#feed').onclick=async e=>{if(!e.target.dataset.del||!confirm('이 게시물을 삭제할까요? (완등 기록은 그대로 남아요)'))return;
-  const id=+e.target.closest('.post').dataset.id;await delPost(id);refresh()};
+$('#feed').onclick=async e=>{const art=e.target.closest('.post');if(!art)return;const id=+art.dataset.id,p=P.find(x=>x.id===id);
+  if(e.target.dataset.edit&&p)return openEdit(p);
+  if(e.target.closest('[data-go]')&&p){const i=M.findIndex(x=>x.n===p.mn);if(i>=0)focusMap(i);return}
+  if(e.target.dataset.del&&confirm('이 게시물을 삭제할까요? (완등 기록은 그대로 남아요)')){await delPost(id);refresh()}};
 // 사진: 긴 변 1080px로 줄여 저장(용량 절약), 지도용 정사각 썸네일 96px 별도 생성
 const prep=file=>new Promise((res,rej)=>{const i=new Image();i.onload=()=>{
   const k=Math.min(1,1080/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.round(i.width*k);c.height=Math.round(i.height*k);c.getContext('2d').drawImage(i,0,0,c.width,c.height);
@@ -194,11 +203,17 @@ const prep=file=>new Promise((res,rej)=>{const i=new Image();i.onload=()=>{
   res({img,th:t.toDataURL('image/jpeg',.8)});URL.revokeObjectURL(i.src)};i.onerror=rej;i.src=URL.createObjectURL(file)});
 let chkIdx=-1;
 // 완등 체크 팝업: 날짜·사진·글을 입력. 사진이 있으면 피드에 올라가고 그 산은 완등 처리됨. adding=이미 완등한 산에 사진·글만 추가
-function openCheck(i,adding){chkIdx=i;const m=M[i];$('#dt').textContent=(adding?'사진·글 올리기':'오늘의 완등 체크')+' · '+m.n;$('#psave').textContent=adding?'올리기':'완등 체크';
+let editId=-1;
+function openEdit(p){editId=p.id;chkIdx=-1;$('#dt').textContent='게시물 수정 · '+p.mn;$('#psave').textContent='수정 저장';$('#lp').textContent='사진 (바꾸려면 새로 선택)';$('#pd').value=p.date;$('#pp').value='';$('#pc').value=p.cap||'';$('#prev').src=p.img;$('#prev').hidden=false;$('#dlg').showModal()}
+function openCheck(i,adding){editId=-1;$('#lp').textContent='사진';chkIdx=i;const m=M[i];$('#dt').textContent=(adding?'사진·글 올리기':'오늘의 완등 체크')+' · '+m.n;$('#psave').textContent=adding?'올리기':'완등 체크';
   $('#pd').value=today();$('#pp').value='';$('#pc').value='';$('#prev').hidden=true;$('#dlg').showModal()}
 $('#pp').onchange=()=>{const f=$('#pp').files[0];if(f){$('#prev').src=URL.createObjectURL(f);$('#prev').hidden=false}};
 $('#pcancel').onclick=()=>$('#dlg').close();
 $('#psave').onclick=async()=>{
+  if(editId>=0){const p=P.find(x=>x.id===editId),f=$('#pp').files[0];if(!p)return;$('#psave').disabled=true;
+    try{let {img,th}=p;if(f)({img,th}=await prep(f));await putPost({...p,date:$('#pd').value||p.date,cap:$('#pc').value.trim(),img,th});refresh();$('#dlg').close()}
+    catch{alert('수정에 실패했어요. 다시 시도해 주세요.')}
+    $('#psave').disabled=false;return}
   if(chkIdx<0)return;const m=M[chkIdx],f=$('#pp').files[0],date=$('#pd').value||today(),cap=$('#pc').value.trim();$('#psave').disabled=true;
   try{if(f){const {img,th}=await prep(f);await putPost({id:Date.now(),mn:m.n,date,cap,img,th})}
     const set={};if(!done(m))set.date=date;if(!f&&cap)set.memo=cap;if(Object.keys(set).length)upd(m,set);
