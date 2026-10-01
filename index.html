@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>블랙야크 100대 명산 기록</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#2f7d4f"><link rel="icon" href="icon-192.png"><title>블랙야크 100대 명산 기록</title>
 <style>
 :root{--bg:#f6f7f4;--fg:#1f2a24;--card:#fff;--ac:#2f7d4f;--mut:#6b7a70;--bd:#dde3dc}
 @media(prefers-color-scheme:dark){:root{--bg:#141a16;--fg:#e6ece7;--card:#1d261f;--ac:#5ec185;--mut:#93a398;--bd:#2c382f}}
@@ -45,4 +45,5 @@ $('#q').oninput=$('#f').onchange=render;
 $('#exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)]));a.download='hk100-backup.json';a.click()};
 $('#imp').onclick=()=>{const i=document.createElement('input');i.type='file';i.onchange=async()=>{try{S=JSON.parse(await i.files[0].text());save();render()}catch{alert('올바른 백업 파일이 아니에요')}};i.click()};
 render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script></body></html>
