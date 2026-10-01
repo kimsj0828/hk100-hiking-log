@@ -10,7 +10,7 @@
 main{max-width:720px;margin:0 auto;padding:16px}
 h1{margin:0 0 8px;font-size:22px}
 .bar{height:10px;background:var(--bd);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
-.tabs{display:flex;gap:8px;margin:12px 0}.tabs button{flex:1;padding:10px;font-weight:600}.tabs .on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.tabs{display:flex;gap:8px;margin:12px 0}.tabs button{flex:1;padding:10px;font-weight:600}.tabs .on,.pri{background:var(--ac)!important;color:#fff!important;border-color:var(--ac)!important}
 .row{display:flex;gap:8px;margin:12px 0}input,select,textarea,button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px}
 .row input{flex:1;min-width:0}
 .m{background:var(--card);border:1px solid var(--bd);border-radius:10px;margin-bottom:8px;padding:10px 12px}
@@ -19,18 +19,37 @@ h1{margin:0 0 8px;font-size:22px}
 .top input{width:20px;height:20px;accent-color:var(--ac)}.top b{flex:1}.top small{color:var(--mut)}
 .det{display:none;margin-top:8px;gap:8px;flex-direction:column}.m.open .det{display:flex}
 #map{height:calc(100vh - 190px);min-height:380px;border-radius:12px;border:1px solid var(--bd)}
-.pop button{margin-top:6px;width:100%;background:var(--ac);color:#fff;border-color:var(--ac)}
+.pop button{margin-top:6px;width:100%;background:var(--ac);color:#fff;border-color:var(--ac)}.pop img{width:100%;border-radius:8px;margin:4px 0}
 .leg{color:var(--mut);font-size:13px;margin-top:6px}
+.pin{background:none;border:0}.dot{display:block;width:16px;height:16px;border-radius:50%;background:#9aa5a0;border:2px solid #fff;box-shadow:0 0 3px #0006}.dot.on{background:#2f7d4f}
+.th{display:block;width:44px;height:44px;object-fit:cover;border-radius:10px;border:3px solid #2f7d4f;background:#fff;box-shadow:0 1px 4px #0006}
+.post{background:var(--card);border:1px solid var(--bd);border-radius:12px;margin:12px 0;overflow:hidden}
+.post header{padding:10px 12px;display:flex;justify-content:space-between;align-items:center}.post header small{color:var(--mut)}
+.post img{width:100%;display:block;max-height:80vh;object-fit:cover}.post p{margin:0;padding:10px 12px;white-space:pre-wrap}
+.post footer{padding:0 12px 10px;text-align:right}.post footer button{border:0;background:none;color:var(--mut);padding:2px}
+.empty{color:var(--mut);text-align:center;padding:40px 0}
+dialog{width:min(92vw,420px);border:1px solid var(--bd);border-radius:14px;background:var(--bg);color:var(--fg);padding:16px}
+dialog::backdrop{background:#0008}dialog label{display:block;margin:10px 0 4px;color:var(--mut);font-size:13px}dialog select,dialog input,dialog textarea{width:100%}
+#prev{width:100%;max-height:260px;object-fit:cover;border-radius:10px;margin-top:8px}
 </style></head><body><main>
 <h1>⛰️ 명산100 <span id=cnt></span></h1>
 <div class=bar><i id=fill></i></div>
-<div class=tabs><button id=tm class=on>지도</button><button id=tl>목록</button></div>
-<section id=vm><div id=map></div><div class=leg>● 초록 완등 · ○ 회색 미완등 — 핀을 누르면 상세와 완등 체크</div></section>
+<div class=tabs><button id=tm class=on>지도</button><button id=tf>피드</button><button id=tl>목록</button></div>
+<section id=vm><div id=map></div><div class=leg>사진 썸네일 = 완등 · ● 초록 = 사진 없는 완등 · ○ 회색 = 미완등</div></section>
+<section id=vf hidden><button id=newpost class=pri style="width:100%;padding:12px;font-weight:600">＋ 사진 올리기</button><div id=feed></div></section>
 <section id=vl hidden>
 <div class=row><input id=q placeholder="산 이름·지역 검색"><select id=f><option value="">전체<option value=1>완등<option value=0>미완등</select></div>
 <div id=list></div>
 <div class=row><button id=exp>백업 내보내기</button><button id=imp>가져오기</button></div>
 </section>
+<dialog id=dlg>
+<b>새 게시물</b>
+<label>산</label><select id=pm></select>
+<label>날짜</label><input id=pd type=date>
+<label>사진</label><input id=pp type=file accept="image/*"><img id=prev hidden>
+<label>글</label><textarea id=pc rows=3 placeholder="오늘의 산행을 남겨 보세요"></textarea>
+<div class=row><button id=pcancel type=button>취소</button><button id=psave type=button class=pri>올리기</button></div>
+</dialog>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -40,19 +59,27 @@ const save=()=>{try{localStorage[K]=JSON.stringify(S)}catch{}};
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';');
 const done=m=>!!(S[m.n]&&S[m.n].date),today=()=>new Date().toISOString().slice(0,10);
 const upd=(m,p)=>{S[m.n]={...S[m.n],...p};save()};
+// 게시물(사진 포함)은 IndexedDB에 저장 — 용량이 큰 사진은 localStorage에 넣을 수 없음
+const DB=new Promise((res,rej)=>{const r=indexedDB.open('bk100',1);r.onupgradeneeded=()=>r.result.createObjectStore('posts',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const tx=(mode,f)=>DB.then(db=>new Promise((res,rej)=>{const t=db.transaction('posts',mode),r=f(t.objectStore('posts'));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)}));
+let P=[];
+const loadP=()=>tx('readonly',s=>s.getAll()).then(a=>{P=(a||[]).sort((x,y)=>y.date.localeCompare(x.date)||y.id-x.id)}).catch(()=>{});
+const lastPost=m=>P.find(p=>p.mn===m.n);
 function stat(){const n=M.filter(done).length;$('#cnt').textContent=n+' / '+M.length;$('#fill').style.width=n*100/M.length+'%'}
-// 지도 (OpenStreetMap). ponytail: 카카오/네이버 지도로 바꾸려면 이 블록만 교체
+const refresh=()=>{stat();paint();renderList();renderFeed()};
+// 지도 (OpenStreetMap). ponytail: 카카오맵으로 바꾸려면 이 블록(initMap/icon/paint)만 교체
 let map,pins=[];
+const icon=m=>{const p=done(m)&&lastPost(m);return p?L.divIcon({className:'pin',html:`<img class=th src="${p.th}">`,iconSize:[44,44],iconAnchor:[22,22],popupAnchor:[0,-22]}):L.divIcon({className:'pin',html:`<i class="dot ${done(m)?'on':''}"></i>`,iconSize:[20,20],iconAnchor:[10,10],popupAnchor:[0,-10]})};
 function initMap(){
-  if(map||typeof L==='undefined'){if(!map)$('#map').textContent='지도를 불러오지 못했어요. 인터넷 연결을 확인하세요.';return}
+  if(map)return;
+  if(typeof L==='undefined'){$('#map').textContent='지도를 불러오지 못했어요. 인터넷 연결을 확인하세요.';return}
   map=L.map('map').setView([36.4,127.8],7);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenStreetMap'}).addTo(map);
-  pins=M.map(m=>L.circleMarker([m.a,m.o],{radius:8,weight:2,color:'#fff',fillOpacity:.95}).addTo(map).bindPopup(()=>pop(m)));
-  map.on('popupopen',e=>{const b=e.popup.getElement().querySelector('button');if(b)b.onclick=()=>{const m=M[+b.dataset.i];upd(m,{date:done(m)?'':today()});map.closePopup();paint();stat();renderList()}});
-  paint();
+  pins=M.map((m,i)=>L.marker([m.a,m.o],{icon:icon(m)}).addTo(map).bindPopup(()=>pop(m,i)));
+  map.on('popupopen',e=>{const b=e.popup.getElement().querySelector('button');if(b)b.onclick=()=>{const m=M[+b.dataset.i];upd(m,{date:done(m)?'':today()});map.closePopup();refresh()}});
 }
-const pop=m=>`<div class=pop><b>${esc(m.n)}</b> ${m.h}m<br><small>인증지점: ${esc(m.p)}<br>${esc(m.l)}${done(m)?'<br>완등 '+S[m.n].date:''}</small><button data-i="${M.indexOf(m)}">${done(m)?'완등 취소':'오늘 완등 체크'}</button></div>`;
-const paint=()=>pins.forEach((p,i)=>p.setStyle({fillColor:done(M[i])?'#2f7d4f':'#9aa5a0'}));
+const pop=(m,i)=>{const p=done(m)&&lastPost(m);return `<div class=pop><b>${esc(m.n)}</b> ${m.h}m<br><small>인증지점: ${esc(m.p)}<br>${esc(m.l)}${done(m)?'<br>완등 '+S[m.n].date:''}</small>${p?`<img src="${p.img}">`:''}<button data-i="${i}">${done(m)?'완등 취소':'오늘 완등 체크'}</button></div>`};
+const paint=()=>pins.forEach((p,i)=>p.setIcon(icon(M[i])));
 // 목록
 function renderList(){
   const q=$('#q').value.trim(),f=$('#f').value;
@@ -63,15 +90,41 @@ function renderList(){
 }
 const mi=e=>M[+e.target.closest('.m').dataset.i];
 $('#list').onclick=e=>{const el=e.target.closest('.m');if(!el)return;
-  if(e.target.type==='checkbox'){upd(mi(e),{date:e.target.checked?today():''});stat();paint();renderList()}
+  if(e.target.type==='checkbox'){upd(mi(e),{date:e.target.checked?today():''});refresh()}
   else if(e.target.closest('.top'))el.classList.toggle('open')};
-$('#list').onchange=e=>{if(e.target.type==='date'){upd(mi(e),{date:e.target.value});stat();paint();renderList()}};
+$('#list').onchange=e=>{if(e.target.type==='date'){upd(mi(e),{date:e.target.value});refresh()}};
 $('#list').oninput=e=>{if(e.target.tagName==='TEXTAREA')upd(mi(e),{memo:e.target.value})};
 $('#q').oninput=$('#f').onchange=renderList;
-function tab(t){const m=t==='m';$('#vm').hidden=!m;$('#vl').hidden=m;$('#tm').classList.toggle('on',m);$('#tl').classList.toggle('on',!m);if(m){initMap();map&&map.invalidateSize()}}
-$('#tm').onclick=()=>tab('m');$('#tl').onclick=()=>tab('l');
-$('#exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)]));a.download='mountain-backup.json';a.click()};
-$('#imp').onclick=()=>{const i=document.createElement('input');i.type='file';i.onchange=async()=>{try{S=JSON.parse(await i.files[0].text());save();stat();paint();renderList()}catch{alert('올바른 백업 파일이 아니에요')}};i.click()};
-stat();renderList();tab('m');
+// 피드
+function renderFeed(){
+  $('#feed').innerHTML=P.length?P.map(p=>{const m=M.find(x=>x.n===p.mn)||{n:p.mn,h:''};return `<article class=post data-id=${p.id}><header><b>${esc(p.mn)} <small>${m.h?m.h+'m':''}</small></b><small>${p.date}</small></header><img src="${p.img}" loading=lazy>${p.cap?`<p>${esc(p.cap)}</p>`:''}<footer><button data-del=1>삭제</button></footer></article>`}).join(''):'<div class=empty>아직 올린 사진이 없어요.<br>산에 다녀오면 첫 게시물을 올려 보세요.</div>';
+}
+$('#feed').onclick=async e=>{if(!e.target.dataset.del||!confirm('이 게시물을 삭제할까요? (완등 기록은 그대로 남아요)'))return;
+  const id=+e.target.closest('.post').dataset.id;await tx('readwrite',s=>s.delete(id));await loadP();refresh()};
+// 사진: 긴 변 1080px로 줄여 저장(용량 절약), 지도용 정사각 썸네일 96px 별도 생성
+const prep=file=>new Promise((res,rej)=>{const i=new Image();i.onload=()=>{
+  const k=Math.min(1,1080/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.round(i.width*k);c.height=Math.round(i.height*k);c.getContext('2d').drawImage(i,0,0,c.width,c.height);
+  const t=document.createElement('canvas');t.width=t.height=96;const s=Math.min(i.width,i.height);t.getContext('2d').drawImage(i,(i.width-s)/2,(i.height-s)/2,s,s,0,0,96,96);
+  res({img:c.toDataURL('image/jpeg',.82),th:t.toDataURL('image/jpeg',.8)});URL.revokeObjectURL(i.src)};i.onerror=rej;i.src=URL.createObjectURL(file)});
+$('#newpost').onclick=()=>{$('#pm').innerHTML='<option value="">산을 선택하세요</option>'+M.map((m,i)=>[m,i]).sort((a,b)=>a[0].n.localeCompare(b[0].n,'ko')).map(([m,i])=>`<option value=${i}>${esc(m.n)}</option>`).join('');$('#pd').value=today();$('#pp').value='';$('#pc').value='';$('#prev').hidden=true;$('#dlg').showModal()};
+$('#pp').onchange=()=>{const f=$('#pp').files[0];if(f){$('#prev').src=URL.createObjectURL(f);$('#prev').hidden=false}};
+$('#pcancel').onclick=()=>$('#dlg').close();
+$('#psave').onclick=async()=>{
+  const f=$('#pp').files[0],mv=$('#pm').value;if(mv===''||!f){alert('산과 사진을 선택하세요');return}
+  const m=M[+mv],date=$('#pd').value||today();$('#psave').disabled=true;
+  try{const {img,th}=await prep(f);await tx('readwrite',s=>s.put({id:Date.now(),mn:m.n,date,cap:$('#pc').value.trim(),img,th}));
+    if(!done(m))upd(m,{date});await loadP();refresh();$('#dlg').close();tab('f')}
+  catch{alert('저장에 실패했어요. 사진을 다시 선택하거나 저장 공간을 확인하세요.')}
+  $('#psave').disabled=false};
+// 탭
+const views={m:'#vm',f:'#vf',l:'#vl'},btn={m:'#tm',f:'#tf',l:'#tl'};
+function tab(t){for(const k in views){$(views[k]).hidden=k!==t;$(btn[k]).classList.toggle('on',k===t)}if(t==='m'){initMap();map&&map.invalidateSize()}}
+$('#tm').onclick=()=>tab('m');$('#tf').onclick=()=>tab('f');$('#tl').onclick=()=>tab('l');
+// 백업/복원: 기록 + 사진 전체를 JSON 한 파일로
+$('#exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({S,P})]));a.download='mountain-backup.json';a.click()};
+$('#imp').onclick=()=>{const i=document.createElement('input');i.type='file';i.onchange=async()=>{try{const d=JSON.parse(await i.files[0].text());S=d.S||{};save();await tx('readwrite',s=>{s.clear();(d.P||[]).forEach(p=>s.put(p))});await loadP();refresh()}catch{alert('올바른 백업 파일이 아니에요')}};i.click()};
+stat();renderList();renderFeed();tab('m');
+loadP().then(refresh);
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script></body></html>
