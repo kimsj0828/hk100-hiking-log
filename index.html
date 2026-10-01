@@ -35,6 +35,8 @@ button{cursor:pointer}
 .post footer{padding:4px 16px 12px;text-align:right}.post footer button{border:0;background:none;color:var(--mut);padding:2px;font-size:13px}
 .empty{color:var(--mut);text-align:center;padding:60px 16px}
 #vm{position:relative;min-height:0}#map{height:calc(100vh - 118px);min-height:420px;background:#e9edf1}
+.locbtn{position:absolute;right:10px;bottom:10px;z-index:5;width:48px;height:48px;padding:3px;background:#fff;border:1px solid #111;display:flex;align-items:center;justify-content:center}.locbtn img{width:100%;height:100%}.locbtn.on{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac)}
+@keyframes bob{50%{transform:translateY(-5px)}}.cat{display:block;width:48px;height:48px;animation:bob 1.6s ease-in-out infinite;filter:drop-shadow(0 3px 2px #0005)}
 .leg{position:absolute;left:10px;bottom:10px;z-index:5;background:#fffe;border:1px solid var(--bd);padding:5px 9px;font-size:12px;color:#333}
 .leg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 4px 0 8px;vertical-align:baseline}.leg i:first-child{margin-left:0}
 .kpop{white-space:normal;position:relative;width:230px;max-width:72vw;background:#fff;color:var(--fg);border:1px solid #111;padding:12px;box-shadow:0 4px 14px #0004;font-size:14px}
@@ -60,7 +62,7 @@ dialog::backdrop{background:#0007}dialog label{display:block;margin:12px 0 4px;c
 <div class=foot><button id=exp class="btn line">백업 내보내기</button><button id=imp class="btn line">가져오기</button></div></section>
 <section id=vf hidden><div style="padding:14px 16px"><button id=newpost class=btn style="width:100%;padding:13px">사진 올리기</button></div><div id=feed></div></section>
 </div>
-<section id=vm><div id=map></div><div class=leg><i style="background:#111"></i>미완등<i style="background:#1f5fd1"></i>완등<i style="background:#fff;border:1px solid #111"></i>인증 사진</div></section>
+<section id=vm><div id=map></div><button id=loc class=locbtn title="내 위치" aria-label="내 위치"></button><div class=leg><i style="background:#111"></i>미완등<i style="background:#1f5fd1"></i>완등<i style="background:#fff;border:1px solid #111"></i>인증 사진</div></section>
 </div>
 <dialog id=dlg>
 <b>새 게시물</b>
@@ -191,12 +193,35 @@ $('#psave').onclick=async()=>{
     if(!done(m))upd(m,{date});refresh();$('#dlg').close();tab('f')}
   catch{alert('저장에 실패했어요. 사진을 다시 선택하거나 저장 공간을 확인하세요.')}
   $('#psave').disabled=false};
+
+// 내 위치: 귀여운 고양이 캐릭터(직접 그린 SVG). 위치는 이 브라우저 안에서만 쓰고 저장·전송하지 않음.
+const CAT='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 28L12 6 28 18Z" fill="#f6a34b"/><path d="M54 28L52 6 36 18Z" fill="#f6a34b"/><path d="M14 22L15 11 24 18Z" fill="#f7b8c0"/><path d="M50 22L49 11 40 18Z" fill="#f7b8c0"/><ellipse cx="32" cy="36" rx="24" ry="21" fill="#f6a34b"/><path d="M32 16v7M25 18v5M39 18v5" stroke="#d9822b" stroke-width="3" stroke-linecap="round"/><ellipse cx="32" cy="44" rx="10" ry="7" fill="#fff3e0"/><ellipse cx="22" cy="36" rx="3.2" ry="4" fill="#222"/><ellipse cx="42" cy="36" rx="3.2" ry="4" fill="#222"/><circle cx="23" cy="34.5" r="1.2" fill="#fff"/><circle cx="43" cy="34.5" r="1.2" fill="#fff"/><path d="M29.5 41h5l-2.5 3z" fill="#ef7f93"/><path d="M32 44q-3 4-6 2M32 44q3 4 6 2" stroke="#8a4b2a" fill="none" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="15" cy="43" rx="4" ry="2.5" fill="#f48f8f" opacity=".5"/><ellipse cx="49" cy="43" rx="4" ry="2.5" fill="#f48f8f" opacity=".5"/><path d="M8 40l9 2M8 46l9-1M56 40l-9 2M56 46l-9-1" stroke="#7a5a3a" stroke-width="1.2" stroke-linecap="round"/><path d="M15 53Q32 63 49 53L44 59Q32 67 20 59Z" fill="#1f5fd1"/></svg>');
+$('#loc').innerHTML='<img src="'+CAT+'" alt="">';
+let me=null,watchId=null,want=false;
+function startLoc(){
+  if(!map||watchId!==null)return;
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    const ll=new kakao.maps.LatLng(pos.coords.latitude,pos.coords.longitude);
+    if(!me){const el=document.createElement('img');el.src=CAT;el.className='cat';me=new kakao.maps.CustomOverlay({position:ll,content:el,yAnchor:.85,zIndex:20});me.setMap(map);if(map.getLevel()>8)map.setLevel(8);map.panTo(ll)}
+    else me.setPosition(ll)},
+    err=>{stopLoc();want=false;$('#loc').classList.remove('on');alert(err.code===1?'위치 권한이 꺼져 있어요. 브라우저 설정에서 이 사이트의 위치를 허용해 주세요.':'현재 위치를 가져오지 못했어요.')},
+    {enableHighAccuracy:true,maximumAge:10000,timeout:20000});
+}
+function stopLoc(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}}
+// 배터리 절약: 지도가 안 보이거나 앱이 백그라운드면 추적을 멈추고, 돌아오면 다시 시작
+function syncLoc(){const vis=!document.hidden&&(wide.matches||cur==='m');if(want&&vis)startLoc();else stopLoc()}
+$('#loc').onclick=()=>{
+  if(!navigator.geolocation){alert('이 기기에서는 위치를 쓸 수 없어요.');return}
+  if(!map)return;
+  if(want&&me){map.setLevel(Math.min(map.getLevel(),8));map.panTo(me.getPosition());return}
+  want=true;$('#loc').classList.add('on');startLoc()};
+document.addEventListener('visibilitychange',syncLoc);
 // 탭. PC(넓은 화면)는 지도가 항상 오른쪽에 보이므로 '지도' 탭이 목록으로 대체됨
 const views={m:'#vm',f:'#vf',l:'#vl'},btn={m:'#tm',f:'#tf',l:'#tl'},wide=matchMedia('(min-width:900px)');let cur='m';
 function tab(t){cur=t;const w=wide.matches;if(w&&t==='m')t='l';
   for(const k in views){$(views[k]).hidden=k!==t&&!(w&&k==='m');$(btn[k]).classList.toggle('on',k===t)}
   $('#panes').hidden=t==='m';
-  if(w||t==='m'){initMap();map&&map.relayout()}}
+  if(w||t==='m'){initMap();map&&map.relayout()}syncLoc()}
 wide.onchange=()=>tab(cur);
 $('#tm').onclick=()=>tab('m');$('#tf').onclick=()=>tab('f');$('#tl').onclick=()=>tab('l');
 // 백업/복원: 기록 + 사진 전체를 JSON 한 파일로
