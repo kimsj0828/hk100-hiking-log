@@ -35,6 +35,7 @@ button{cursor:pointer}
 .post footer{padding:4px 16px 12px;text-align:right}.post footer button{border:0;background:none;color:var(--mut);padding:2px;font-size:13px}
 .empty{color:var(--mut);text-align:center;padding:60px 16px}
 #vm{position:relative;min-height:0}#map{height:calc(100vh - 118px);min-height:420px;background:#e9edf1}
+.pt{pointer-events:none;padding:6px;display:flex}.dot{display:block;width:15px;height:15px;border-radius:50%;background:#111;border:2px solid #fff;box-shadow:0 0 2px #0009}.dot.on{background:#1f5fd1}.th{display:block;width:48px;height:48px;object-fit:cover;border:3px solid #fff;box-shadow:0 1px 5px #0007;background:#fff}
 .locbtn{position:absolute;right:10px;bottom:10px;z-index:5;width:48px;height:48px;padding:3px;background:#fff;border:1px solid #111;display:flex;align-items:center;justify-content:center}.locbtn img{width:100%;height:100%}.locbtn.on{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac)}
 @keyframes bob{50%{transform:translateY(-5px)}}.cat{display:block;width:48px;height:48px;animation:bob 1.6s ease-in-out infinite;filter:drop-shadow(0 3px 2px #0005)}
 .leg{position:absolute;left:10px;bottom:10px;z-index:5;background:#fffe;border:1px solid var(--bd);padding:5px 9px;font-size:12px;color:#333}
@@ -130,21 +131,29 @@ function stat(){const n=M.filter(done).length;$('#n1').textContent=n;$('#n2').te
 const refresh=()=>{stat();paint();renderList();renderFeed()};
 // 지도 (카카오맵). JavaScript 키는 등록한 도메인에서만 동작하는 공개용 키
 const KAKAO_KEY='f81d775d93982148e85f0cd604645dde';
-let map,mk=[],ov,kfail=false,fit=()=>{};const dots={};
-const rr=(g,x,y,w,h,r)=>{g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()};
-const mimg=(c,n)=>new kakao.maps.MarkerImage(c.toDataURL(),new kakao.maps.Size(n,n),{offset:new kakao.maps.Point(n/2,n/2)});
-const dot=on=>dots[on]||(dots[on]=(()=>{const c=document.createElement('canvas');c.width=c.height=24;const g=c.getContext('2d');g.beginPath();g.arc(12,12,6.5,0,7);g.fillStyle=on?AC:'#111';g.fill();g.lineWidth=2.5;g.strokeStyle='#fff';g.stroke();return mimg(c,24)})());
-const thumbImg=(src,cb)=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=c.height=56;const g=c.getContext('2d');g.shadowColor='#0006';g.shadowBlur=4;g.fillStyle='#fff';rr(g,3,3,50,50,3);g.fill();g.shadowBlur=0;g.save();rr(g,6,6,44,44,1);g.clip();g.drawImage(im,6,6,44,44);g.restore();cb(mimg(c,56))};im.src=src};
+let map,mk=[],ov,kfail=false,fit=()=>{};
 function initMap(){
   if(map)return;
   if(!(window.kakao&&kakao.maps&&kakao.maps.Map)){$('#map').textContent=kfail?'카카오맵을 불러오지 못했어요. 인터넷 연결을 확인하세요.':'지도를 불러오는 중…';return}
   $('#map').textContent='';
   map=new kakao.maps.Map($('#map'),{center:new kakao.maps.LatLng(36.4,127.8),level:13});
-  const bd=new kakao.maps.LatLngBounds();M.forEach(m=>bd.extend(new kakao.maps.LatLng(m.a,m.o)));fit=()=>{map.relayout();map.setBounds(bd,30,20,30,20)};setTimeout(fit,50);
-  mk=M.map((m,i)=>{const k=new kakao.maps.Marker({position:new kakao.maps.LatLng(m.a,m.o),image:dot(false)});kakao.maps.event.addListener(k,'click',()=>openPop(i));return k});
-  mk.forEach(k=>k.setMap(map));
+  // 첫 화면: 산 100개가 다 보이게 맞춘 뒤, 한국을 가운데로(일본 쪽 여백은 조금만) 옮김
+  const lo=M.map(m=>m.o),mxLo=Math.max(...lo),mnLo=Math.min(...lo);
+  let touched=false;['mousedown','touchstart','wheel'].forEach(ev=>$('#map').addEventListener(ev,()=>touched=true,{passive:true}));
+  // 지도 크기(px)로 확대 단계를 직접 계산: 레벨13에서 1px≈1.025km(실측), 한국 남북 약 578km·동서 약 330km가 들어가는 가장 큰 단계
+  const mnLa=Math.min(...M.map(m=>m.a)),mxLa=Math.max(...M.map(m=>m.a));
+  fit=force=>{if(touched&&!force)return;map.relayout();const r=$('#map').getBoundingClientRect(),need=Math.max(578/r.height,330/r.width)/1.025,
+      L=Math.min(14,Math.max(10,Math.ceil(13+Math.log2(need)))),lonSpan=r.width*1.025*2**(L-13)/90,even=(mxLo+mnLo)/2;
+    map.setLevel(L,{animate:false});map.setCenter(new kakao.maps.LatLng((mnLa+mxLa)/2,Math.max(mxLo+.35-lonSpan/2,even-.9)))};
+  // 화면 배치가 끝나기 전/후로 맞추고, 창 크기가 바뀌어도(사용자가 지도를 만지기 전까지) 다시 맞춤
+  setTimeout(()=>fit(true),50);setTimeout(()=>fit(),900);let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>fit(),250)});
+  // 산 점은 clickable:false 오버레이 → 점 위에서 드래그를 시작해도 지도가 움직임(Marker는 드래그를 가로챔)
+  mk=M.map((m,i)=>{const el=document.createElement('div');el.className='pt';
+    const o=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(m.a,m.o),content:el,xAnchor:.5,yAnchor:.5,zIndex:5,clickable:false});o.setMap(map);o.el=el;return o});
   ov=new kakao.maps.CustomOverlay({yAnchor:1.3,zIndex:10,clickable:true});
-  kakao.maps.event.addListener(map,'click',()=>ov.setMap(null));
+  kakao.maps.event.addListener(map,'click',e=>{const pj=map.getProjection(),c=pj.containerPointFromCoords(e.latLng);let best=-1,bd=1e9;
+    M.forEach((m,k)=>{const p=pj.containerPointFromCoords(new kakao.maps.LatLng(m.a,m.o)),d=Math.hypot(p.x-c.x,p.y-c.y),rad=done(m)&&lastPost(m)?28:16;if(d<=rad&&d<bd){bd=d;best=k}});
+    best>=0?openPop(best):ov.setMap(null)});
   paint();
 }
 function openPop(i){if(!map)return;const m=M[i],el=document.createElement('div');el.className='kpop';el.innerHTML='<span class=x>✕</span>'+pop(m,i);
@@ -152,7 +161,7 @@ function openPop(i){if(!map)return;const m=M[i],el=document.createElement('div')
   el.querySelector('button').onclick=()=>{upd(m,{date:done(m)?'':today()});ov.setMap(null);refresh()};
   ov.setContent(el);ov.setPosition(mk[i].getPosition());ov.setMap(map);const pj=map.getProjection(),pt=pj.containerPointFromCoords(mk[i].getPosition());map.panTo(pj.coordsFromContainerPoint(new kakao.maps.Point(pt.x,pt.y-130)))}
 const pop=(m,i)=>{const p=done(m)&&lastPost(m);return `<div class=pop><b>${esc(m.n)}</b><small>정상 | ${m.h.toLocaleString()}m<br>인증지점: ${esc(m.p)}<br>${esc(m.l)}${done(m)?'<br><span style="color:'+AC+';font-weight:700">완등 '+fmt(S[m.n].date)+'</span>':''}</small>${p?`<img src="${p.img}">`:''}<button class="btn${done(m)?' line':''}">${done(m)?'완등 취소':'오늘 완등 체크'}</button></div>`};
-const paintOne=i=>{const m=M[i],p=done(m)&&lastPost(m);if(p)thumbImg(p.th,img=>{if(done(M[i]))mk[i].setImage(img)});else mk[i].setImage(dot(done(m)))};
+const paintOne=i=>{const m=M[i],p=done(m)&&lastPost(m);mk[i].el.innerHTML=p?`<img class=th src="${p.th}">`:`<i class="dot${done(m)?' on':''}"></i>`};
 const paint=()=>mk.forEach((_,i)=>paintOne(i));
 // 목록 (BAC 공식 페이지처럼: 왼쪽 정보, 오른쪽 사진)
 let openIdx=-1;
@@ -194,8 +203,8 @@ $('#psave').onclick=async()=>{
   catch{alert('저장에 실패했어요. 사진을 다시 선택하거나 저장 공간을 확인하세요.')}
   $('#psave').disabled=false};
 
-// 내 위치: 귀여운 고양이 캐릭터(직접 그린 SVG). 위치는 이 브라우저 안에서만 쓰고 저장·전송하지 않음.
-const CAT='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 28L12 6 28 18Z" fill="#f6a34b"/><path d="M54 28L52 6 36 18Z" fill="#f6a34b"/><path d="M14 22L15 11 24 18Z" fill="#f7b8c0"/><path d="M50 22L49 11 40 18Z" fill="#f7b8c0"/><ellipse cx="32" cy="36" rx="24" ry="21" fill="#f6a34b"/><path d="M32 16v7M25 18v5M39 18v5" stroke="#d9822b" stroke-width="3" stroke-linecap="round"/><ellipse cx="32" cy="44" rx="10" ry="7" fill="#fff3e0"/><ellipse cx="22" cy="36" rx="3.2" ry="4" fill="#222"/><ellipse cx="42" cy="36" rx="3.2" ry="4" fill="#222"/><circle cx="23" cy="34.5" r="1.2" fill="#fff"/><circle cx="43" cy="34.5" r="1.2" fill="#fff"/><path d="M29.5 41h5l-2.5 3z" fill="#ef7f93"/><path d="M32 44q-3 4-6 2M32 44q3 4 6 2" stroke="#8a4b2a" fill="none" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="15" cy="43" rx="4" ry="2.5" fill="#f48f8f" opacity=".5"/><ellipse cx="49" cy="43" rx="4" ry="2.5" fill="#f48f8f" opacity=".5"/><path d="M8 40l9 2M8 46l9-1M56 40l-9 2M56 46l-9-1" stroke="#7a5a3a" stroke-width="1.2" stroke-linecap="round"/><path d="M15 53Q32 63 49 53L44 59Q32 67 20 59Z" fill="#1f5fd1"/></svg>');
+// 내 위치: 귀여운 고등어 태비 고양이 캐릭터(직접 그린 SVG). 위치는 이 브라우저 안에서만 쓰고 저장·전송하지 않음.
+const CAT='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 28L12 6 28 18Z" fill="#9aa0a9"/><path d="M54 28L52 6 36 18Z" fill="#9aa0a9"/><path d="M14 22L15 11 24 18Z" fill="#f2b5bd"/><path d="M50 22L49 11 40 18Z" fill="#f2b5bd"/><path d="M12 12L13 17M52 12L51 17" stroke="#3f444d" stroke-width="2.4" stroke-linecap="round"/><ellipse cx="32" cy="36" rx="24" ry="21" fill="#aeb4bc"/><path d="M32 15v9M24.5 17.5l1 6M39.5 17.5l-1 6" stroke="#3f444d" stroke-width="3" stroke-linecap="round"/><path d="M9 33q7 0 11 4M8.5 39.5q7 .5 11 3.5M55 33q-7 0-11 4M55.5 39.5q-7 .5-11 3.5" stroke="#3f444d" stroke-width="2.6" stroke-linecap="round" fill="none"/><ellipse cx="32" cy="44.5" rx="10.5" ry="7" fill="#f6f6f4"/><ellipse cx="22.5" cy="35" rx="4.2" ry="4.8" fill="#e9d35a"/><ellipse cx="41.5" cy="35" rx="4.2" ry="4.8" fill="#e9d35a"/><ellipse cx="22.5" cy="35.2" rx="1.7" ry="4" fill="#1e1e22"/><ellipse cx="41.5" cy="35.2" rx="1.7" ry="4" fill="#1e1e22"/><circle cx="21.2" cy="33.2" r="1.3" fill="#fff"/><circle cx="40.2" cy="33.2" r="1.3" fill="#fff"/><path d="M29.5 41h5l-2.5 3z" fill="#ef7f93"/><path d="M32 44q-3 4-6 2M32 44q3 4 6 2" stroke="#7d5560" fill="none" stroke-width="1.6" stroke-linecap="round"/><ellipse cx="16" cy="44" rx="3.6" ry="2.3" fill="#f2a0a8" opacity=".55"/><ellipse cx="48" cy="44" rx="3.6" ry="2.3" fill="#f2a0a8" opacity=".55"/><path d="M7 42l9 1.5M7.5 47.5l9-1.5M57 42l-9 1.5M56.5 47.5l-9-1.5" stroke="#f4f4f4" stroke-width="1.2" stroke-linecap="round"/><path d="M15 53Q32 63 49 53L44 59Q32 67 20 59Z" fill="#1f5fd1"/></svg>');
 $('#loc').innerHTML='<img src="'+CAT+'" alt="">';
 let me=null,watchId=null,want=false;
 function startLoc(){
