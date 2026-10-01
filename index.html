@@ -83,7 +83,7 @@ const BACIMG='https://ssproxy.ucloudbiz.olleh.com/v1/AUTH_aa0c3b93-1abc-4592-874
 const K='bk100n',AC='#1f5fd1';let S={};try{S=JSON.parse(localStorage[K]||'{}')}catch{}
 const save=()=>{try{localStorage[K]=JSON.stringify(S)}catch{}};
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';');
-const done=m=>!!(S[m.n]&&S[m.n].date),today=()=>new Date().toISOString().slice(0,10),fmt=d=>d.replace(/-/g,'.');
+const done=m=>!!(S[m.n]&&S[m.n].date),today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)},fmt=d=>d.replace(/-/g,'.');
 const upd=(m,p)=>{S[m.n]={...S[m.n],...p};cu?fb.fs.setDoc(fb.fs.doc(ucol('rec'),m.n),S[m.n]).catch(cloudErr):save()};
 // 게시물(사진 포함)은 IndexedDB에 저장 — 용량이 큰 사진은 localStorage에 넣을 수 없음
 const DB=new Promise((res,rej)=>{const r=indexedDB.open('bk100',1);r.onupgradeneeded=()=>r.result.createObjectStore('posts',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
@@ -164,7 +164,7 @@ function initMap(){
 function focusMap(i){if(!wide.matches)tab('m');initMap();if(!map)return;setTimeout(()=>{map.relayout();map.setLevel(Math.min(map.getLevel(),7),{animate:false});map.setCenter(new kakao.maps.LatLng(M[i].a,M[i].o));openPop(i)},150)}
 function openPop(i){if(!map)return;const m=M[i],el=document.createElement('div');el.className='kpop';el.innerHTML='<span class=x>✕</span>'+pop(m,i);
   el.querySelector('.x').onclick=()=>ov.setMap(null);
-  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const a=b.dataset.a;ov.setMap(null);if(a==='undo'){upd(m,{date:''});refresh()}else openCheck(i,a==='add')});
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const a=b.dataset.a;ov.setMap(null);if(a==='undo'){if(confirm('완등을 취소할까요? (올린 사진은 그대로 남아요)')){upd(m,{date:''});refresh()}}else openCheck(i,a==='add')});
   ov.setContent(el);ov.setPosition(mk[i].getPosition());ov.setMap(map);const pj=map.getProjection(),pt=pj.containerPointFromCoords(mk[i].getPosition());map.panTo(pj.coordsFromContainerPoint(new kakao.maps.Point(pt.x,pt.y-130)))}
 const pop=(m,i)=>{const p=done(m)&&lastPost(m);return `<div class=pop><b>${esc(m.n)}</b><small>정상 | ${m.h.toLocaleString()}m<br>인증지점: ${esc(m.p)}<br>${esc(m.l)}${done(m)?'<br><span style="color:'+AC+';font-weight:700">완등 '+fmt(S[m.n].date)+'</span>':''}</small>${p?`<img src="${p.img}">`:''}${done(m)?'<button class=btn data-a=add>사진·글 올리기</button><button class="btn line" data-a=undo>완등 취소</button>':'<button class=btn data-a=check>오늘 완등 체크</button>'}</div>`};
 const paintOne=i=>{const m=M[i],p=done(m)&&lastPost(m);mk[i].el.innerHTML=(p?`<img class=th src="${p.th}">`:`<i class="dot${done(m)?' on':''}"></i>`)+`<span class=lb>${esc(m.n)}</span>`};
@@ -180,11 +180,11 @@ function renderList(){
 }
 const mi=e=>M[+e.target.closest('.item').dataset.i];
 $('#list').onclick=e=>{const el=e.target.closest('.item');if(!el)return;
-  if(e.target.dataset.chk||e.target.dataset.add){const m=mi(e),i=+el.dataset.i;if(e.target.dataset.add||!done(m))openCheck(i,!!e.target.dataset.add);else{upd(m,{date:''});refresh()}return}
+  if(e.target.dataset.chk||e.target.dataset.add){const m=mi(e),i=+el.dataset.i;if(e.target.dataset.add||!done(m))openCheck(i,!!e.target.dataset.add);else if(confirm('완등을 취소할까요? (올린 사진은 그대로 남아요)')){upd(m,{date:''});refresh()}return}
   if(e.target.dataset.map){focusMap(+el.dataset.i);return}
   if(e.target.closest('.det'))return;
   const i=+el.dataset.i;openIdx=openIdx===i?-1:i;renderList();if(openIdx>=0&&matchMedia('(min-width:900px)').matches)openPop(i)};
-$('#list').onchange=e=>{if(e.target.type==='date'){upd(mi(e),{date:e.target.value});refresh()}};
+$('#list').onchange=e=>{if(e.target.type==='date'){if(e.target.value)upd(mi(e),{date:e.target.value});refresh()}};
 $('#list').oninput=e=>{if(e.target.tagName==='TEXTAREA')upd(mi(e),{memo:e.target.value})};
 $('#q').oninput=$('#f').onchange=renderList;
 // 피드
