@@ -34,3 +34,8 @@
 - https://apps.apple.com/kr/app/id1328731534
 - https://bac.blackyak.com/BAC/ChallengeProgram/114
 - https://www.100mountain.co.kr/2025/09/blackyak-mountains-100.html
+
+## 스크린샷 관찰 (research/screens, App Store 공식 이미지 6장, 로컬 참고용)
+- 어두운 남보라 + 핑크 포인트 컬러. 상단에 "챌린지 프로그램" 카드(명산100 배지, 도전자 수).
+- 인증 등록 카드는 사진 썸네일 중심, 지도 화면은 "인증완료/미완료" 핀 색 구분 + 전체 인증율(%) 표시.
+- 우리 앱에 가져올 것: 진행률 크게, 지도에서 완등/미완등 핀 구분, 산 카드에 사진 썸네일.
